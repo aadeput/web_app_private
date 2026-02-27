@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geoaccess | Private Training</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #f8fbff; color: #002D5D; -webkit-font-smoothing: antialiased; }
+        header { background: white; border-bottom: 1px solid #f1f5f9; padding: 0.8rem 0; }
+        
+        .step-circle { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 800; font-size: 13px; z-index: 10; transition: all 0.3s ease; }
+        .step-active { background: #002D5D; color: white; box-shadow: 0 0 0 4px rgba(0,45,93,0.1); }
+        .step-inactive { background: white; color: #cbd5e1; border: 2px solid #f1f5f9; }
+        .step-done { background: #10b981; color: white; }
+        
+        .glass-card { background: white; border-radius: 2.5rem; border: 1px solid rgba(226, 232, 240, 0.8); box-shadow: 0 20px 50px -12px rgba(0,45,93,0.04); }
+        .geo-input { width: 100%; padding: 0.8rem 1.25rem; border-radius: 14px; border: 1.5px solid #eef2f6; background: #fcfdfe; outline: none; transition: 0.2s; font-size: 14px; font-weight: 500; }
+        .geo-input:focus { border-color: #002D5D; background: white; box-shadow: 0 0 0 4px rgba(0,45,93,0.03); }
+        .label-text { font-weight: 700; color: #64748b; margin-bottom: 0.5rem; display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+        
+        .btn-primary { background: #002D5D; color: white; padding: 1rem 1.5rem; border-radius: 14px; font-weight: 800; text-transform: uppercase; width: 100%; cursor: pointer; transition: all 0.2s; letter-spacing: 0.025em; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 20px -5px rgba(0,45,93,0.2); }
+        .btn-primary:active { transform: translateY(0); opacity: 0.9; }
+        .btn-primary:disabled { background: #cbd5e1; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        .tutor-photo-frame { 
+            width: 140px; height: 140px; margin: 0 auto 1.5rem; border-radius: 2.5rem; overflow: hidden; 
+            background: #002D5D; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 15px 30px -10px rgba(0,45,93,0.25); border: 5px solid white;
+        }
+        .tutor-photo-frame img { width: 100%; height: 100%; object-fit: cover; }
+
+        .calendar-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 12px; transition: 0.2s; }
+        .calendar-day:hover:not(.disabled):not(.selected) { background: #f1f5f9; color: #002D5D; }
+        .calendar-day.selected { background: #002D5D !important; color: white; transform: scale(1.05); }
+        .calendar-day.disabled { color: #cbd5e1 !important; pointer-events: none; text-decoration: line-through; opacity: 0.5; }
+
+        @media (min-width: 768px) {
+            .profile-split-container { display: flex; align-items: stretch; gap: 2rem; }
+            .tutor-info-card { flex: 1; }
+            .tutor-about-card { flex: 1.4; text-align: left; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback } = React;
+
+        const App = () => {
+            const [step, setStep] = useState(1);
+            const [form, setForm] = useState({ nama: '', email: '', topik: '' });
+            const [loading, setLoading] = useState(false);
+            const [userData, setUserData] = useState(null); 
+            const [selectedDate, setSelectedDate] = useState(null);
+            const [bookedSchedules, setBookedSchedules] = useState([]);
+            const [disabledDates, setDisabledDates] = useState([]);
+            const [busyTimes, setBusyTimes] = useState([]); 
+            const [currMonth, setCurrMonth] = useState(new Date().getMonth());
+            const [currYear, setCurrYear] = useState(new Date().getFullYear());
+
+            const namaBulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+            const steps = ["Identitas", "Profil Tutor", "Pilih Jadwal", "Selesai"];
+            const timeSlots = ["08.00", "09.00", "10.00", "11.00", "12.00", "13.00", "14.00", "15.00", "16.00", "17.00", "18.00", "19.00"];
+
+            const handleCheck = useCallback(() => {
+                if (!form.email || !form.nama) return alert("Nama dan Email wajib diisi!");
+                setLoading(true);
+                google.script.run.withSuccessHandler(res => {
+                    setLoading(false);
+                    if (res && (res.status === "success" || res.status === "no_tutor")) { 
+                        setUserData(res); 
+                        setStep(2); 
+                    } else { 
+                        alert("Email pendaftaran tidak ditemukan!"); 
+                    }
+                }).cekEmailRegistrasi(form.email);
+            }, [form]);
+
+            useEffect(() => {
+                if (step === 3 && userData?.tutorCalendar) {
+                    setLoading(true);
+                    google.script.run.withSuccessHandler(res => {
+                        setDisabledDates(res || []);
+                        setLoading(false);
+                    }).getDisabledDates(userData.tutorCalendar, currMonth, currYear);
+                }
+            }, [currMonth, step, userData]);
+
+            useEffect(() => {
+                if (selectedDate && userData?.tutorCalendar) {
+                    setLoading(true);
+                    google.script.run.withSuccessHandler(res => {
+                        setBusyTimes(res || []);
+                        setLoading(false);
+                    }).getBusyTimes(userData.tutorCalendar, selectedDate);
+                }
+            }, [selectedDate, userData]);
+
+            const addSession = (time) => {
+                if (!selectedDate) return alert("Pilih tanggal dulu!");
+                const startH = parseInt(time.split('.')[0]);
+                const endH = startH + 3;
+                
+                const startTimeReq = new Date(selectedDate + "T" + time.replace('.', ':') + ":00").getTime();
+                const endTimeReq = startTimeReq + (3 * 3600000);
+
+                const isLocalOverlap = bookedSchedules.some(s => {
+                    const sStart = new Date(s.date + "T" + s.time.replace('.', ':') + ":00").getTime();
+                    const sEnd = sStart + (3 * 3600000);
+                    return (startTimeReq < sEnd && endTimeReq > sStart);
+                });
+
+                if (isLocalOverlap) return alert("Sesi ini bertabrakan dengan pilihan Anda sebelumnya!");
+                
+                setBookedSchedules(prev => [...prev, { 
+                    date: selectedDate, 
+                    time: time, 
+                    end: `${String(endH).padStart(2, '0')}.00` 
+                }]);
+            };
+
+            const handleBooking = () => {
+                if(bookedSchedules.length > 0) {
+                    setLoading(true);
+                    const summ = bookedSchedules.map(s => `${s.date} @ ${s.time} - ${s.end}`).join(" | ");
+                    
+                    google.script.run.withSuccessHandler((res) => { 
+                        setLoading(false); 
+                        if(res) setStep(4);
+                        else alert("Terjadi kesalahan sistem.");
+                    }).prosesPendaftaran(
+                        form.nama, 
+                        form.email, 
+                        userData.tutorCalendar, 
+                        summ, 
+                        form.topik, 
+                        userData.whatsapp, 
+                        userData.zoom,
+                        userData.tutor
+                    );
+                } else {
+                    alert("Silahkan pilih minimal 1 sesi!");
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col pb-12">
+                    <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md">
+                        <div className="max-w-4xl mx-auto px-6 flex items-center gap-3">
+                            <div className="w-9 h-9 bg-[#002D5D] rounded-xl flex items-center justify-center text-white font-black shadow-lg shadow-blue-900/10">G</div>
+                            <div className="flex flex-col text-left">
+                                <span className="text-sm font-black uppercase tracking-tight text-[#002D5D]">Geoaccess Indonesia</span>
+                                <span className="text-[10px] font-bold text-blue-500 tracking-[0.2em] uppercase leading-none">Private Training</span>
+                            </div>
+                        </div>
+                    </header>
+
+                    <div className="max-w-4xl mx-auto w-full p-6 flex-grow">
+                        <nav className="flex justify-between mb-12 relative px-4 max-w-2xl mx-auto">
+                            <div className="absolute top-[18px] left-10 right-10 h-[2px] bg-slate-100 -z-0"></div>
+                            {steps.map((label, i) => (
+                                <div key={i} className="flex flex-col items-center gap-2 z-10 bg-[#f8fbff] px-3">
+                                    <div className={`step-circle ${step === i+1 ? 'step-active' : step > i+1 ? 'step-done' : 'step-inactive'}`}>
+                                        {step > i+1 ? '✓' : i+1}
+                                    </div>
+                                    <span className={`text-[9px] font-black uppercase tracking-widest ${step === i+1 ? 'text-[#002D5D]' : 'text-slate-400'}`}>{label}</span>
+                                </div>
+                            ))}
+                        </nav>
+
+                        <main className="glass-card p-6 md:p-12 relative overflow-hidden">
+                            {loading && <div className="absolute inset-0 bg-white/70 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center">
+                                <div className="w-10 h-10 border-4 border-[#002D5D] border-t-transparent rounded-full animate-spin mb-4"></div>
+                                <span className="font-black text-[10px] tracking-[0.3em] text-[#002D5D] uppercase">Processing...</span>
+                            </div>}
+
+                            {step === 1 && (
+                                <div className="max-w-md mx-auto space-y-6">
+                                    <div className="text-center mb-8">
+                                        <h2 className="text-3xl font-black text-[#002D5D] mb-2">Halo, Selamat Datang 👋</h2>
+                                        <p className="text-slate-400 text-sm font-medium">Silahkan isi data diri untuk memulai penjadwalan Anda.</p>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="label-text">Nama</label>
+                                            <input className="geo-input" placeholder="Masukkan nama Anda" value={form.nama} onChange={e=>setForm({...form, nama: e.target.value})} />
+                                        </div>
+                                        <div>
+                                            <label className="label-text">Email Pendaftaran (*)</label>
+                                            <input className="geo-input" type="email" placeholder="Masukkan email pendaftaran Anda" value={form.email} onChange={e=>setForm({...form, email: e.target.value})} />
+                                        </div>
+                                        <div>
+                                            <label className="label-text">Topik yang ingin dibahas:</label>
+                                            <input className="geo-input" placeholder="Apakah ada yang ingin dibahas?" value={form.topik} onChange={e=>setForm({...form, topik: e.target.value})} />
+                                        </div>
+                                        <button onClick={handleCheck} className="btn-primary mt-4">
+                                            Lanjut ke Profil Tutor
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {step === 2 && (
+                                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <div className="profile-split-container">
+                                        <div className="tutor-info-card text-center bg-slate-50/50 p-8 rounded-[2rem] border border-slate-100 flex flex-col justify-center">
+                                            {userData?.status === "no_tutor" ? (
+                                                <div className="space-y-6 py-4">
+                                                    <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-3xl mx-auto flex items-center justify-center text-3xl">⚠️</div>
+                                                    <h3 className="font-black text-[#002D5D]">Tutor Belum Siap</h3>
+                                                    <p className="text-slate-500 text-xs font-medium px-4">Mohon maaf, tutor untuk Anda belum dijadwalkan. Admin kami sedang memproses alokasi tutor untuk Anda.</p>
+                                                    <a href="https://wa.me/6285747014727" target="_blank" className="btn-primary bg-[#25D366]">WhatsApp Admin</a>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="tutor-photo-frame">
+                                                        <img src={userData?.tutorFoto || "https://ui-avatars.com/api/?name="+userData?.tutor} alt="Tutor" />
+                                                    </div>
+                                                    <h3 className="text-2xl font-black text-[#002D5D] leading-tight">{userData?.tutor}</h3>
+                                                    <div className="inline-flex items-center justify-center gap-1.5 mt-2 mb-8">
+                                                        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                                                        <span className="text-blue-500 font-extrabold uppercase text-[10px] tracking-widest">Professional Tutor Geoaccess Indonesia</span>
+                                                    </div>
+                                                    <button onClick={()=>setStep(3)} className="btn-primary">Pilih Jadwal</button>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {userData?.status !== "no_tutor" && (
+                                            <div className="tutor-about-card flex flex-col justify-center p-4">
+                                                <div className="mb-6">
+                                                    <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-300 mb-3">Tentang Tutor:</h4>
+                                                    <div className="h-1 w-12 bg-blue-500 rounded-full mb-6"></div>
+                                                    <div className="text-[#002D5D] text-lg font-bold leading-relaxed space-y-4" 
+                                                         dangerouslySetInnerHTML={{ __html: userData?.tutorTentang || "Tutor berpengalaman yang siap membimbing Anda." }}>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="mt-10 text-center">
+                                        <button onClick={()=>setStep(1)} className="text-[#94a3b8] font-black text-[11px] uppercase tracking-widest hover:text-[#002D5D] transition-colors underline underline-offset-8 decoration-slate-200">← Kembali Edit Data</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {step === 3 && (
+                                <div className="space-y-8">
+                                    <div className="grid md:grid-cols-2 gap-10">
+                                        <div>
+                                            <div className="flex justify-between items-center mb-6 font-black text-xs text-[#002D5D] uppercase">
+                                                <button onClick={()=>setCurrMonth(prev => prev === 0 ? 11 : prev - 1)}>‹</button>
+                                                <span>{namaBulan[currMonth]} {currYear}</span>
+                                                <button onClick={()=>setCurrMonth(prev => prev === 11 ? 0 : prev + 1)}>›</button>
+                                            </div>
+                                            <div className="grid grid-cols-7 gap-1">
+                                                {["M","S","S","R","K","J","S"].map(d=><div key={d} className="text-[10px] font-black text-slate-300 py-2 text-center uppercase">{d}</div>)}
+                                                {[...Array(new Date(currYear, currMonth, 1).getDay())].map((_,i)=><div key={`empty-${i}`}></div>)}
+                                                {[...Array(new Date(currYear, currMonth+1, 0).getDate())].map((_,i)=>{
+                                                    const d = i+1;
+                                                    const ds = `${currYear}-${String(currMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                                                    const isOff = disabledDates.includes(ds);
+                                                    return <div key={d} onClick={()=>!isOff && setSelectedDate(ds)} className={`calendar-day ${selectedDate===ds?'selected':''} ${isOff?'disabled':''}`}>{d}</div>
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <p className="text-center font-black text-slate-400 text-[11px] uppercase mb-4 tracking-widest">Pilih Jam (1 Sesi = 3 Jam)</p>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {timeSlots.map(t => {
+                                                    const startTimeReq = new Date(selectedDate + "T" + t.replace('.', ':') + ":00").getTime();
+                                                    const endTimeReq = startTimeReq + (3 * 3600000);
+                                                    const now = new Date().getTime();
+                                                    
+                                                    const isPastTime = startTimeReq < now;
+                                                    const isBusyServer = busyTimes.some(ev => (ev.start < endTimeReq && ev.end > startTimeReq));
+                                                    const isSelectedLocal = bookedSchedules.some(s => {
+                                                        const sStart = new Date(s.date + "T" + s.time.replace('.', ':') + ":00").getTime();
+                                                        const sEnd = sStart + (3 * 3600000);
+                                                        return (startTimeReq < sEnd && endTimeReq > sStart);
+                                                    });
+
+                                                    const isDisabled = isPastTime || isBusyServer || isSelectedLocal;
+
+                                                    return (
+                                                        <button 
+                                                            key={t} 
+                                                            disabled={isDisabled || !selectedDate} 
+                                                            onClick={()=>addSession(t)} 
+                                                            className={`p-3 border rounded-xl font-bold text-[11px] transition-all ${isDisabled ? 'bg-slate-50 text-slate-300 border-slate-50 cursor-not-allowed' : 'border-slate-100 hover:border-[#002D5D] hover:bg-slate-50'}`}
+                                                        >
+                                                            {t}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div className="mt-6 space-y-2">
+                                                {bookedSchedules.map((s,i)=>(
+                                                    <div key={i} className="bg-blue-50 p-3 rounded-lg flex justify-between items-center text-[10px] font-bold text-[#002D5D]">
+                                                        <span>{s.date.split('-').reverse().join('/')} @ {s.time} - {s.end} WIB</span>
+                                                        <button onClick={()=>setBookedSchedules(bookedSchedules.filter((_,idx)=>idx!==i))} className="text-red-400 text-lg font-black">×</button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-center gap-6">
+                                        <button onClick={handleBooking} className="btn-primary">Booking Jadwal ✓</button>
+                                        <button onClick={()=>setStep(2)} className="text-[#94a3b8] font-black text-[14px] uppercase tracking-widest">← Kembali</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {step === 4 && (
+                                <div className="text-center space-y-8 animate-in zoom-in duration-500 py-16">
+                                    <div className="relative inline-block">
+                                        <div className="w-24 h-24 bg-emerald-50 text-emerald-500 rounded-[2.5rem] flex items-center justify-center mx-auto text-4xl shadow-inner">✓</div>
+                                        <div className="absolute -top-2 -right-2 w-8 h-8 bg-emerald-500 text-white rounded-full flex items-center justify-center text-xs animate-bounce">✨</div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <h2 className="text-4xl font-black text-[#002D5D]">Booking Berhasil!</h2>
+                                        <p className="text-slate-400 text-sm font-medium max-w-xs mx-auto leading-relaxed">Terima kasih, {form.nama}. Detail jadwal telah kami kirimkan ke WhatsApp & Email Anda.</p>
+                                    </div>
+                                    <div className="pt-4">
+                                        <button onClick={()=>window.location.reload()} className="btn-primary max-w-xs mx-auto">Selesai & Keluar</button>
+                                    </div>
+                                </div>
+                            )}
+                        </main>
+                        <footer className="mt-12 text-center">
+                            <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.4em]">© 2026 Geoaccess Indonesia • Learning Management System</p>
+                        </footer>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
